@@ -98,6 +98,7 @@ process_url() {
 
         # Rename the file after upload is complete
         curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path.tmp" -Q "RENAME $sftp_path.tmp $sftp_path"
+        
     fi
 
     # Process URLs recursively if depth is not 0
@@ -131,7 +132,7 @@ process_url() {
         
         for new_url in $new_urls; do
             if [ -z "${visited_urls[$new_url]}" ]; then
-                #echo "Found new URL: $new_url"
+                echo "Found new URL: $new_url"
                 visited_urls[$new_url]=1
                 process_url "$new_url" $new_depth
             fi
