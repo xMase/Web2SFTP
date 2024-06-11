@@ -131,7 +131,7 @@ process_url() {
         
         for new_url in $new_urls; do
             if [ -z "${visited_urls[$new_url]}" ]; then
-                echo "Found new URL: $new_url"
+                #echo "Found new URL: $new_url"
                 visited_urls[$new_url]=1
                 process_url "$new_url" $new_depth
             fi
