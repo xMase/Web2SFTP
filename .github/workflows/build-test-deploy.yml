@@ -20,4 +20,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: docker push xmase/web2sftp:latest
+          tags: xmase/web2sftp:latest
