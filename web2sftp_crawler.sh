@@ -49,10 +49,17 @@ url_has_extension() {
     return 1
 }
 
+# Function to remove query parameters from a URL
+remove_query_params() {
+    local url=$1
+    echo "${url%%\?*}"
+}
+
 # Function to download and upload files from a given URL
 process_url() {
     local url=$1
     local depth=$2
+    url=$(remove_query_params "$url")
     url=$(echo "$url" | sed 's/[[:space:]]*$//') # Trim trailing spaces
 
     # Check if the URL has one of the specified file extensions
@@ -79,8 +86,8 @@ process_url() {
             fi
         fi
 
-        # check if file already exists
-        if curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head --fail "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path" > /dev/null; then
+        # Check if file already exists
+        if curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head --fail "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path" > /dev/null 2>&1; then
             echo "File $filename already exists on the server"
             return
         fi
@@ -99,16 +106,35 @@ process_url() {
         local new_urls
         base_url=$(echo "$url" | sed 's#/$##')  # Remove trailing slash if exists
         new_urls=$(curl -s "$url" | grep -o 'href="[^"]*"' | sed 's/href="//;s/"$//' | while read -r link; do
-            if [[ "$base_url" == *"/" && "$link" == /* ]]; then
-                echo "${base_url}${link:1}"  # Remove the leading slash from the relative path
-            elif [[ "$base_url" != *"/" && "$link" != /* ]]; then
-                echo "${base_url}/${link}"  # Add a slash between the base URL and relative path
+            link=$(remove_query_params "$link")
+            # Check if the link is an absolute URL
+            if [[ "$link" =~ ^https?:// ]]; then
+                # Extract the domain part from the base URL
+                base_domain=$(echo "$base_url" | awk -F/ '{print $3}')
+                # Extract the domain part from the link
+                link_domain=$(echo "$link" | awk -F/ '{print $3}')
+                # Check if the link domain matches the base domain
+                if [ "$base_domain" = "$link_domain" ]; then
+                    echo "$link"
+                fi
             else
-                echo "${base_url}${link}"   # Concatenate as is
+                # Construct the absolute URL based on the base URL and the relative link
+                if [[ "$base_url" == *"/" && "$link" == /* ]]; then
+                    echo "${base_url}${link:1}"  # Remove the leading slash from the relative path
+                elif [[ "$base_url" != *"/" && "$link" != /* ]]; then
+                    echo "${base_url}/${link}"  # Add a slash between the base URL and relative path
+                else
+                    echo "${base_url}${link}"   # Concatenate as is
+                fi
             fi
         done | sort -u)
+        
         for new_url in $new_urls; do
-            process_url "$new_url" $new_depth
+            if [ -z "${visited_urls[$new_url]}" ]; then
+                echo "Found new URL: $new_url"
+                visited_urls[$new_url]=1
+                process_url "$new_url" $new_depth
+            fi
         done
     fi
 }
@@ -156,19 +182,29 @@ if [ -z "$SFTP_PASSWORD" ]; then
     echo
 fi
 
+# Initialize an associative array to track visited URLs
+declare -A visited_urls
+
 # Process URLs from file or single URL
 if [ -n "$URL_FILE" ]; then
     while IFS= read -r url || [ -n "$url" ]; do
         [ -z "$url" ] && continue # Skip empty lines
-        process_url "$url" $DEPTH
+        url=$(remove_query_params "$url")
+        if [ -z "${visited_urls[$url]}" ]; then
+            visited_urls[$url]=1
+            process_url "$url" $DEPTH
+        fi
     done < "$URL_FILE"
 elif [ ${#URLS[@]} -gt 0 ]; then
     for url in "${URLS[@]}"; do
-        process_url "$url" $DEPTH
+        url=$(remove_query_params "$url")
+        if [ -z "${visited_urls[$url]}" ]; then
+            visited_urls[$url]=1
+            process_url "$url" $DEPTH
+        fi
     done
 else
     usage
 fi
 
 echo "All files have been uploaded to the SFTP server."
-
