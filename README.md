@@ -34,6 +34,12 @@ This script crawls URLs, downloads files, and uploads them to an SFTP server. It
 
 - `curl`: Used for downloading files and checking URL accessibility.
 
+## Docker
+
+A Dockerfile is provided to build a Docker image for running the script. The image is based on the `alpine` image to keep it lightweight.
+
+The Docker image is available on Docker Hub: [https://hub.docker.com/r/xmase/web2sftp](https://hub.docker.com/r/xmase/web2sftp)
+
 ## Security
 
 - Ensure that sensitive information like passwords is handled securely.

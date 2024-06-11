@@ -1,0 +1,4 @@
+services:
+  web2sftp:
+    build: .
+    env_file: ".env"
