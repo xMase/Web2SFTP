@@ -62,9 +62,17 @@ process_url() {
 
     url=$(echo "$url" | sed 's/[[:space:]]*$//') # Trim trailing spaces
 
+    # Set wget depth parameter
+    if [ "$depth" == "-1" ]; then
+        wget_depth="inf"
+    else
+        wget_depth="$depth"
+    fi
+
+    file_extensions=$(echo "$FILE_EXTENSIONS" | tr ',' '|')
 
     # Download files matching the specified criteria
-    wget -r -A 'pcap' --reject-regex 'html' -e robots=off --ignore-case --spider --no-directories --no-parent "$url" 2>&1 | grep -oP 'https?://[^\s"]+pcap' | while read -r download_url; do
+    wget -r -A "$file_extensions" --reject-regex 'html' -e robots=off --ignore-case --spider --no-directories --no-parent --level="$wget_depth" "$url" 2>&1 | grep -oP "https?://[^\s\"]+($(echo $file_extensions | sed 's/\./\\./g'))" | while read -r download_url; do
         echo "Downloading file: $download_url"
         filename=$(basename "$download_url")
 
@@ -123,7 +131,7 @@ done
 shift $((OPTIND -1))
 
 # Set default depth if not provided
-DEPTH=${DEPTH:-1}
+DEPTH=${DEPTH:5}
 
 # Check if SFTP server, user, password, file extensions, and base path are provided
 if [ -z "$SFTP_SERVER" ] || [ -z "$SFTP_USER" ] || [ -z "$SFTP_PASSWORD" ] || [ -z "$FILE_EXTENSIONS" ]; then
