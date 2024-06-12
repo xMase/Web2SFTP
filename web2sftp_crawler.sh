@@ -59,85 +59,40 @@ remove_query_params() {
 process_url() {
     local url=$1
     local depth=$2
-    url=$(remove_query_params "$url")
+
     url=$(echo "$url" | sed 's/[[:space:]]*$//') # Trim trailing spaces
 
-    # Check if the URL has one of the specified file extensions
-    if url_has_extension "$url" "$FILE_EXTENSIONS"; then
-        echo "Processing URL: $url"
 
-        # Check if the URL is accessible
-        if ! is_url_accessible "$url"; then
-            echo "$url is NOT accessible"
-            return
-        fi
+    # Download files matching the specified criteria
+    wget -r -A 'pcap' --reject-regex 'html' -e robots=off --ignore-case --spider --no-directories --no-parent "$url" 2>&1 | grep -oP 'https?://[^\s"]+pcap' | while read -r download_url; do
+        echo "Downloading file: $download_url"
+        filename=$(basename "$download_url")
 
-        # Download and upload the file
-        local filename=$(basename "$url")
-        local sftp_path="$SFTP_BASE_PATH/$filename"
-        
         # If an external script is specified, use it to generate the path suffix
         if [ -n "$EXTERNAL_SCRIPT" ]; then
-            sftp_path=$(bash "$EXTERNAL_SCRIPT" -s "$SFTP_SERVER"  -P "$SFTP_PORT" -U "$SFTP_USER" -p "$SFTP_PASSWORD"  -b "$SFTP_BASE_PATH" -f "$URL_FILE" -u "$url" -e "$FILE_EXTENSIONS" -d "$DEPTH" -n "$filename")
+            sftp_path=$(bash "$EXTERNAL_SCRIPT" -s "$SFTP_SERVER" -U "$SFTP_USER" -p "$SFTP_PASSWORD" -P "$SFTP_PORT" -b "$SFTP_BASE_PATH" -u "$download_url")           
             # check error code
             if [ $? -ne 0 ]; then
-                echo "Error in external script"
+                echo "Error in external script: $sftp_path"
                 exit 1
             fi
+        else
+            sftp_path="$SFTP_BASE_PATH/$filename"
         fi
 
-        # Check if file already exists
+        # Check if file already exists 
         if curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head --fail "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path" > /dev/null 2>&1; then
-            echo "File $filename already exists on the server"
+            echo "File $(basename "$download_url") already exists on the server"
             return
         fi
         
         # Download the file and upload it to the SFTP server
         echo "Downloading $filename and uploading to $sftp_path"
-        curl -s "$url" | curl --insecure -T - --user "$SFTP_USER:$SFTP_PASSWORD" "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path.tmp" --ftp-create-dirs
+        curl -s "$download_url" | curl --insecure -T - --user "$SFTP_USER:$SFTP_PASSWORD" "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path.tmp" --ftp-create-dirs
 
         # Rename the file after upload is complete
-        curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path.tmp" -Q "RENAME $sftp_path.tmp $sftp_path"
-        
-    fi
-
-    # Process URLs recursively if depth is not 0
-    if [ "$depth" != "0" ]; then
-        local new_depth=$((depth - 1))
-        local new_urls
-        base_url=$(echo "$url" | sed 's#/$##')  # Remove trailing slash if exists
-        new_urls=$(curl -s "$url" | grep -o 'href="[^"]*"' | sed 's/href="//;s/"$//' | while read -r link; do
-            link=$(remove_query_params "$link")
-            # Check if the link is an absolute URL
-            if [[ "$link" =~ ^https?:// ]]; then
-                # Extract the domain part from the base URL
-                base_domain=$(echo "$base_url" | awk -F/ '{print $3}')
-                # Extract the domain part from the link
-                link_domain=$(echo "$link" | awk -F/ '{print $3}')
-                # Check if the link domain matches the base domain
-                if [ "$base_domain" = "$link_domain" ]; then
-                    echo "$link"
-                fi
-            else
-                # Construct the absolute URL based on the base URL and the relative link
-                if [[ "$base_url" == *"/" && "$link" == /* ]]; then
-                    echo "${base_url}${link:1}"  # Remove the leading slash from the relative path
-                elif [[ "$base_url" != *"/" && "$link" != /* ]]; then
-                    echo "${base_url}/${link}"  # Add a slash between the base URL and relative path
-                else
-                    echo "${base_url}${link}"   # Concatenate as is
-                fi
-            fi
-        done | sort -u)
-        
-        for new_url in $new_urls; do
-            if [ -z "${visited_urls[$new_url]}" ]; then
-                echo "Found new URL: $new_url"
-                visited_urls[$new_url]=1
-                process_url "$new_url" $new_depth
-            fi
-        done
-    fi
+        curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head "sftp://$SFTP_SERVER:$SFTP_PORT" -Q "RENAME $sftp_path.tmp $sftp_path" 2>&1
+    done    
 }
 
 # Automatically load .env file if it exists

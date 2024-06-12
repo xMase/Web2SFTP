@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Parse command-line options
-while getopts ":s:U:P:p:b:f:u:e:d:n:" opt; do
+while getopts ":s:U:P:p:b:f:u:e:d:" opt; do
     case $opt in
         s) SFTP_SERVER="$OPTARG" ;;
         U) SFTP_USER="$OPTARG" ;;
@@ -12,7 +12,6 @@ while getopts ":s:U:P:p:b:f:u:e:d:n:" opt; do
         u) URL="$OPTARG" ;;
         e) FILE_EXTENSIONS="$OPTARG" ;;
         d) DEPTH="$OPTARG" ;;
-        n) FILE_NAME="$OPTARG" ;;
     esac
 done
 shift $((OPTIND -1))
