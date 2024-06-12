@@ -72,7 +72,7 @@ process_url() {
     file_extensions=$(echo "$FILE_EXTENSIONS" | tr ',' '|')
 
     # Download files matching the specified criteria
-    wget -r -A "$file_extensions" --reject-regex 'html' -e robots=off --ignore-case --spider --no-directories --no-parent --level="$wget_depth" "$url" 2>&1 | grep -o "https\?://[^[:space:]\"]\+\($(echo "$file_extensions" | sed 's/\./\\./g')\)" | while read -r download_url; do
+    wget -r -A "$file_extensions" --reject-regex 'html' -e robots=off --ignore-case --spider --no-directories --no-parent --level="$wget_depth" "$url" 2>&1 | ack -oP "https?://[^\s\"]+($(echo $file_extensions | sed 's/\./\\./g'))" | while read -r download_url; do
         echo "Downloading file: $download_url"
         filename=$(basename "$download_url")
 

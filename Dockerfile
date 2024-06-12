@@ -4,7 +4,8 @@ FROM alpine:3.9
 RUN apk add --no-cache \
     bash \
     curl \
-    libssh2 
+    libssh2 \
+    ack
 
 # Copy the script to the container
 COPY web2sftp_crawler.sh /app/
