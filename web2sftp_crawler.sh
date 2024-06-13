@@ -47,7 +47,7 @@ process_url() {
     # Download files matching the specified criteria
     # --reject-regex "(.*)\?(.*)" : Reject URLs with query parameters
     # --reject-regex 'html' : Reject URLs ending with 'html'
-    wget -r -A "$file_extensions" --reject-regex '(.*)\?(.*)|.html' -e robots=off --ignore-case --spider --no-directories --no-parent --level="$wget_depth" "$url" 2>&1 | sort | uniq | \
+    wget -r --accept "$file_extensions" --reject-regex '(.*)\?(.*)|.html' -e robots=off --ignore-case --spider --no-directories --no-parent --level="$wget_depth" "$url" 2>&1 | \
     while read -r line; do       
         # Extract URLs using parameter expansion and pattern matching
         if [[ "$line" =~ https?://[^[:space:]]+ ]]; then 
@@ -69,18 +69,17 @@ process_url() {
                     sftp_path="$SFTP_BASE_PATH/$filename"
                 fi
 
-                # Check if file already exists 
-                if curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head --fail "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path" > /dev/null 2>&1; then
-                    echo "File $(basename "$download_url") already exists on the server"
-                    return
-                fi
-                
-                # Download the file and upload it to the SFTP server
-                echo "Downloading $filename and uploading to $sftp_path"
-                curl -s "$download_url" | curl --insecure -T - --user "$SFTP_USER:$SFTP_PASSWORD" "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path.tmp" --ftp-create-dirs
+                # Check if file not exists 
+                if ! curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head --fail "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path" > /dev/null 2>&1; then
+                    # Download the file and upload it to the SFTP server
+                    echo "Downloading $filename and uploading to $sftp_path"
+                    curl -s "$download_url" | curl --insecure -T - --user "$SFTP_USER:$SFTP_PASSWORD" "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path.tmp" --ftp-create-dirs
 
-                # Rename the file after upload is complete
-                curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head "sftp://$SFTP_SERVER:$SFTP_PORT" -Q "RENAME $sftp_path.tmp $sftp_path" 2>&1
+                    # Rename the file after upload is complete
+                    curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head "sftp://$SFTP_SERVER:$SFTP_PORT" -Q "RENAME $sftp_path.tmp $sftp_path" 2>&1
+                else 
+                    echo "File $(basename "$download_url") already exists on the server"
+                fi               
             fi
         fi
     done    

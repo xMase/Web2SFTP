@@ -1,13 +1,7 @@
 FROM alpine:3.9
 
-# Install required packages
-RUN apk add --no-cache \
-    bash \
-    curl \
-    wget \
-    libssh2 
+RUN apk add --no-cache bash curl wget
 
-# Copy the script to the container
 COPY web2sftp_crawler.sh /app/
 COPY generate_next_folder.sh /app/
 
