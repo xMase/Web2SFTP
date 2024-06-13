@@ -26,35 +26,6 @@ help() {
     exit 0
 }
 
-# Function to check if URL is accessible
-is_url_accessible() {
-    local url=$1
-    if curl --output /dev/null --silent --head --fail "$url"; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Function to check if URL ends with one of the specified file extensions
-url_has_extension() {
-    local url=$1
-    local extensions=$2
-    local filename=$(basename "$url")
-    local file_extension="${filename##*.}"
-    IFS=',' read -ra ext_list <<< "$extensions"
-    for ext in "${ext_list[@]}"; do
-        [ "$file_extension" = "$ext" ] && return 0
-    done
-    return 1
-}
-
-# Function to remove query parameters from a URL
-remove_query_params() {
-    local url=$1
-    echo "${url%%\?*}"
-}
-
 # Function to download and upload files from a given URL
 process_url() {
     local url=$1
@@ -74,34 +45,44 @@ process_url() {
     echo "Filtering files with extensions: $file_extensions"
 
     # Download files matching the specified criteria
-    wget -r -A "$file_extensions" --reject-regex 'html' -e robots=off --ignore-case --spider --no-directories --no-parent --level="$wget_depth" "$url" 2>&1 | ack -o "https?://[^\s\"]+($(echo $file_extensions | sed 's/\./\\./g'))" | while read -r download_url; do
-        echo "Downloading file: $download_url"
-        filename=$(basename "$download_url")
+    # --reject-regex "(.*)\?(.*)" : Reject URLs with query parameters
+    # --reject-regex 'html' : Reject URLs ending with 'html'
+    wget -r -A "$file_extensions" --reject-regex '(.*)\?(.*)|.html' -e robots=off --ignore-case --spider --no-directories --no-parent --level="$wget_depth" "$url" 2>&1 | sort | uniq | \
+    while read -r line; do       
+        # Extract URLs using parameter expansion and pattern matching
+        if [[ "$line" =~ https?://[^[:space:]]+ ]]; then 
+            download_url="${BASH_REMATCH[0]}"            
+            echo "$download_url"
+            if [[ "$download_url" =~ \.($file_extensions)$ ]]; then            
+                echo "Downloading file: $download_url"
+                filename=$(basename "$download_url")
 
-        # If an external script is specified, use it to generate the path suffix
-        if [ -n "$EXTERNAL_SCRIPT" ]; then
-            sftp_path=$(bash "$EXTERNAL_SCRIPT" -s "$SFTP_SERVER" -U "$SFTP_USER" -p "$SFTP_PASSWORD" -P "$SFTP_PORT" -b "$SFTP_BASE_PATH" -u "$download_url")           
-            # check error code
-            if [ $? -ne 0 ]; then
-                echo "Error in external script: $sftp_path"
-                exit 1
+                # If an external script is specified, use it to generate the path suffix
+                if [ -n "$EXTERNAL_SCRIPT" ]; then
+                    sftp_path=$(bash "$EXTERNAL_SCRIPT" -s "$SFTP_SERVER" -U "$SFTP_USER" -p "$SFTP_PASSWORD" -P "$SFTP_PORT" -b "$SFTP_BASE_PATH" -u "$download_url")           
+                    # check error code
+                    if [ $? -ne 0 ]; then
+                        echo "Error in external script: $sftp_path"
+                        exit 1
+                    fi
+                else
+                    sftp_path="$SFTP_BASE_PATH/$filename"
+                fi
+
+                # Check if file already exists 
+                if curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head --fail "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path" > /dev/null 2>&1; then
+                    echo "File $(basename "$download_url") already exists on the server"
+                    return
+                fi
+                
+                # Download the file and upload it to the SFTP server
+                echo "Downloading $filename and uploading to $sftp_path"
+                curl -s "$download_url" | curl --insecure -T - --user "$SFTP_USER:$SFTP_PASSWORD" "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path.tmp" --ftp-create-dirs
+
+                # Rename the file after upload is complete
+                curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head "sftp://$SFTP_SERVER:$SFTP_PORT" -Q "RENAME $sftp_path.tmp $sftp_path" 2>&1
             fi
-        else
-            sftp_path="$SFTP_BASE_PATH/$filename"
         fi
-
-        # Check if file already exists 
-        if curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head --fail "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path" > /dev/null 2>&1; then
-            echo "File $(basename "$download_url") already exists on the server"
-            return
-        fi
-        
-        # Download the file and upload it to the SFTP server
-        echo "Downloading $filename and uploading to $sftp_path"
-        curl -s "$download_url" | curl --insecure -T - --user "$SFTP_USER:$SFTP_PASSWORD" "sftp://$SFTP_SERVER:$SFTP_PORT/$sftp_path.tmp" --ftp-create-dirs
-
-        # Rename the file after upload is complete
-        curl --insecure --user "$SFTP_USER:$SFTP_PASSWORD" --head "sftp://$SFTP_SERVER:$SFTP_PORT" -Q "RENAME $sftp_path.tmp $sftp_path" 2>&1
     done    
 }
 
@@ -148,26 +129,15 @@ if [ -z "$SFTP_PASSWORD" ]; then
     echo
 fi
 
-# Initialize an associative array to track visited URLs
-declare -A visited_urls
-
 # Process URLs from file or single URL
 if [ -n "$URL_FILE" ]; then
     while IFS= read -r url || [ -n "$url" ]; do
         [ -z "$url" ] && continue # Skip empty lines
-        url=$(remove_query_params "$url")
-        if [ -z "${visited_urls[$url]}" ]; then
-            visited_urls[$url]=1
-            process_url "$url" $DEPTH
-        fi
+        process_url "$url" $DEPTH
     done < "$URL_FILE"
 elif [ ${#URLS[@]} -gt 0 ]; then
-    for url in "${URLS[@]}"; do
-        url=$(remove_query_params "$url")
-        if [ -z "${visited_urls[$url]}" ]; then
-            visited_urls[$url]=1
-            process_url "$url" $DEPTH
-        fi
+    for url in "${URLS[@]}"; do   
+        process_url "$url" $DEPTH
     done
 else
     usage

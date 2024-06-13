@@ -2,6 +2,9 @@
 services:
   web2sftp:
     build: .
-    env_file: ".env"
     network_mode: "host"
+    volumes:
+      - ./web2sftp_crawler.sh:/app/web2sftp_crawler.sh
+      - ./generate_next_folder.sh:/app/generate_next_folder.sh
+      - ./.env:/app/.env
       

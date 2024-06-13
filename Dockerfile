@@ -5,8 +5,7 @@ RUN apk add --no-cache \
     bash \
     curl \
     wget \
-    libssh2 \
-    ack
+    libssh2 
 
 # Copy the script to the container
 COPY web2sftp_crawler.sh /app/
